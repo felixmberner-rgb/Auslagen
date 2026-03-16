@@ -1,773 +1,629 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { 
-  User, Settings, Share, Divide, Plus, CheckCircle2, 
-  RotateCcw, Paperclip, ChevronRight, Camera, Trash2, Euro, Loader2 
-} from 'lucide-react';
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <!-- Verhindert das Heranzoomen beim Tippen auf dem iPhone und macht es App-artig -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    
+    <!-- PWA Meta Tags für Apple (Vollbild, kein Safari-UI) -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="Auslagen">
+    <title>Auslagen</title>
 
-// --- FIREBASE IMPORTS ---
-import { initializeApp } from 'firebase/app';
-import { getAuth, signInWithCustomToken, signInAnonymously, onAuthStateChanged } from 'firebase/auth';
-import { getFirestore, doc, setDoc, onSnapshot, collection, deleteDoc, updateDoc } from 'firebase/firestore';
+    <!-- Tailwind CSS für das Design -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- React & ReactDOM -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    
+    <!-- Babel (Übersetzt den JSX Code für den Browser) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
-// --- FIREBASE SETUP ---
-const firebaseConfig = JSON.parse(__firebase_config);
-const app = initializeApp(firebaseConfig);
-const auth = getAuth(app);
-const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-
-// --- DEFAULT SETTINGS ---
-const defaultSettings = {
-  hasCompletedOnboarding: false,
-  numberOfPersons: 2,
-  person1Name: "Person 1",
-  person2Name: "Person 2",
-  person3Name: "Person 3",
-  person4Name: "Person 4",
-  pdfTitle: "Auslagen-Übersicht",
-  pdfPaymentInfo: "Bitte überweise den Betrag. Danke!",
-  notificationsEnabled: true,
-  notificationFrequency: 7
-};
-
-// --- MAIN APP COMPONENT ---
-export default function App() {
-  const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [settings, setSettings] = useState(null);
-  const [debts, setDebts] = useState([]);
-
-  // 1. Authentifizierung (Pflicht vor Datenbank-Abfragen)
-  useEffect(() => {
-    const initAuth = async () => {
-      try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
+    <style>
+        /* Verhindert Text-Auswahl wie in einer echten App */
+        body {
+            -webkit-user-select: none;
+            -webkit-touch-callout: none;
+            user-select: none;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #F2F2F7;
         }
-      } catch (error) {
-        console.error("Auth Error:", error);
-      }
-    };
-    initAuth();
-
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
-      setUser(u);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // 2. Daten abrufen (Live-Synchronisation)
-  useEffect(() => {
-    if (!user) return;
-
-    const settingsRef = doc(db, 'artifacts', appId, 'users', user.uid, 'config', 'settings');
-    const debtsRef = collection(db, 'artifacts', appId, 'users', user.uid, 'debts');
-
-    // Settings laden
-    const unsubSettings = onSnapshot(settingsRef, (docSnap) => {
-      if (docSnap.exists()) {
-        setSettings(docSnap.data());
-      } else {
-        setSettings(defaultSettings);
-      }
-      setLoading(false);
-    }, (err) => console.error("Settings Fetch Error:", err));
-
-    // Schulden laden
-    const unsubDebts = onSnapshot(debtsRef, (querySnap) => {
-      const fetchedDebts = [];
-      querySnap.forEach(doc => {
-        fetchedDebts.push({ id: doc.id, ...doc.data() });
-      });
-      setDebts(fetchedDebts);
-    }, (err) => console.error("Debts Fetch Error:", err));
-
-    return () => {
-      unsubSettings();
-      unsubDebts();
-    };
-  }, [user]);
-
-  // 3. Datenbank-Schreibfunktionen
-  const updateSettingInDb = async (key, value) => {
-    if (!user || !settings) return;
-    const newSettings = { ...settings, [key]: value };
-    const settingsRef = doc(db, 'artifacts', appId, 'users', user.uid, 'config', 'settings');
-    await setDoc(settingsRef, newSettings, { merge: true });
-  };
-
-  const completeOnboarding = async (finalSettings) => {
-    if (!user) return;
-    const newSettings = { ...finalSettings, hasCompletedOnboarding: true };
-    const settingsRef = doc(db, 'artifacts', appId, 'users', user.uid, 'config', 'settings');
-    await setDoc(settingsRef, newSettings, { merge: true });
-  };
-
-  const saveDebtToDb = async (debtData) => {
-    if (!user) return;
-    const debtsRef = collection(db, 'artifacts', appId, 'users', user.uid, 'debts');
-    await setDoc(doc(debtsRef, debtData.id), debtData);
-  };
-
-  const updateDebtInDb = async (debtId, updates) => {
-    if (!user) return;
-    const debtDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'debts', debtId);
-    await updateDoc(debtDocRef, updates);
-  };
-
-  const deleteDebtFromDb = async (debtId) => {
-    if (!user) return;
-    const debtDocRef = doc(db, 'artifacts', appId, 'users', user.uid, 'debts', debtId);
-    await deleteDoc(debtDocRef);
-  };
-
-  if (loading || !settings) {
-    return (
-      <div className="min-h-screen bg-[#F2F2F7] flex flex-col items-center justify-center text-gray-500">
-        <Loader2 className="w-10 h-10 animate-spin text-blue-500 mb-4" />
-        <p>Daten werden geladen...</p>
-      </div>
-    );
-  }
-
-  if (!settings.hasCompletedOnboarding) {
-    return (
-      <OnboardingView 
-        initialSettings={settings} 
-        onComplete={completeOnboarding} 
-      />
-    );
-  }
-
-  return (
-    <MainTabView 
-      settings={settings} 
-      updateSetting={updateSettingInDb} 
-      debts={debts} 
-      saveDebt={saveDebtToDb}
-      updateDebt={updateDebtInDb}
-      deleteDebt={deleteDebtFromDb}
-    />
-  );
-}
-
-// --- 1. ONBOARDING VIEW ---
-function OnboardingView({ initialSettings, onComplete }) {
-  const [local, setLocal] = useState(initialSettings);
-
-  const updateLocal = (key, value) => setLocal(prev => ({ ...prev, [key]: value }));
-
-  return (
-    <div className="min-h-screen bg-[#F2F2F7] text-black font-sans pb-20">
-      <div className="max-w-md mx-auto pt-12 px-4">
-        <div className="flex flex-col items-center mb-8">
-          <Euro className="w-16 h-16 text-green-500 mb-4" />
-          <h1 className="text-2xl font-bold mb-2">Willkommen bei Auslagen! 🎉</h1>
-          <p className="text-center text-gray-500 text-sm">
-            Mit dieser App behältst du ganz einfach den Überblick darüber, wer dir noch Geld schuldet. Perfekt für WGs oder Freunde.
-          </p>
-        </div>
-
-        <div className="bg-white rounded-xl overflow-hidden mb-6 shadow-sm">
-          <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-            Für wen legst du aus?
-          </div>
-          <div className="p-4 border-b border-gray-100 flex justify-between items-center">
-            <span>Anzahl der Personen: {local.numberOfPersons}</span>
-            <div className="flex bg-gray-100 rounded-md">
-              <button onClick={() => updateLocal('numberOfPersons', Math.max(1, local.numberOfPersons - 1))} className="px-3 py-1 border-r border-gray-200">-</button>
-              <button onClick={() => updateLocal('numberOfPersons', Math.min(4, local.numberOfPersons + 1))} className="px-3 py-1">+</button>
-            </div>
-          </div>
-          {[1, 2, 3, 4].map(num => (
-            local.numberOfPersons >= num && (
-              <div key={num} className="p-4 border-b border-gray-100 flex items-center">
-                <span className="w-32 text-gray-600">Name Person {num}</span>
-                <input 
-                  type="text" 
-                  className="flex-1 outline-none text-right"
-                  value={local[`person${num}Name`]}
-                  onChange={(e) => updateLocal(`person${num}Name`, e.target.value)}
-                />
-              </div>
-            )
-          ))}
-        </div>
-
-        <div className="bg-white rounded-xl overflow-hidden mb-8 shadow-sm">
-          <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-500 uppercase tracking-wider">
-            Erinnerungen
-          </div>
-          <div className="p-4 border-b border-gray-100 flex justify-between items-center">
-            <span>Erinnerungen aktivieren</span>
-            <input 
-              type="checkbox" 
-              checked={local.notificationsEnabled}
-              onChange={(e) => updateLocal('notificationsEnabled', e.target.checked)}
-              className="w-5 h-5 accent-blue-500"
-            />
-          </div>
-          {local.notificationsEnabled && (
-            <div className="p-4 flex justify-between items-center">
-              <span>Häufigkeit (Tage)</span>
-              <select 
-                value={local.notificationFrequency}
-                onChange={(e) => updateLocal('notificationFrequency', Number(e.target.value))}
-                className="bg-transparent text-blue-500 outline-none text-right font-medium"
-              >
-                <option value={1}>Täglich</option>
-                <option value={3}>Alle 3 Tage</option>
-                <option value={7}>Wöchentlich</option>
-                <option value={14}>Alle 2 Wochen</option>
-              </select>
-            </div>
-          )}
-        </div>
-
-        <div className="flex justify-center">
-          <button 
-            onClick={() => onComplete(local)}
-            className="bg-blue-500 text-white font-semibold py-3 px-12 rounded-full shadow-md active:scale-95 transition-transform"
-          >
-            App starten
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// --- 2. MAIN TAB VIEW ---
-function MainTabView({ settings, updateSetting, debts, saveDebt, updateDebt, deleteDebt }) {
-  const [activeTab, setActiveTab] = useState('person1');
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [showSplitModal, setShowSplitModal] = useState(false);
-  const [debtToEdit, setDebtToEdit] = useState(null);
-
-  const isSettings = activeTab === 'settings';
-  const currentPersonKey = isSettings ? 'person1' : activeTab;
-  const currentPersonName = settings[`${currentPersonKey}Name`];
-
-  const currentOpenDebts = useMemo(() => 
-    debts.filter(d => d.personKey === currentPersonKey && !d.isPaid)
-         .sort((a, b) => new Date(b.date) - new Date(a.date)),
-  [debts, currentPersonKey]);
-
-  const currentPaidDebts = useMemo(() => 
-    debts.filter(d => d.personKey === currentPersonKey && d.isPaid)
-         .sort((a, b) => new Date(b.date) - new Date(a.date)),
-  [debts, currentPersonKey]);
-
-  const currentTotalOpen = currentOpenDebts.reduce((sum, d) => sum + d.amount, 0);
-
-  const handlePrint = () => window.print();
-
-  const openEdit = (debt) => {
-    setDebtToEdit(debt);
-    setShowAddModal(true);
-  };
-
-  return (
-    <div className="min-h-screen bg-[#F2F2F7] font-sans pb-24 print:bg-white print:pb-0">
-      <PrintLayout 
-        personName={currentPersonName} 
-        debts={currentOpenDebts} 
-        total={currentTotalOpen} 
-        settings={settings} 
-      />
-
-      <div className="sticky top-0 z-10 bg-white/90 backdrop-blur-md border-b border-gray-200 px-4 py-3 flex justify-between items-center print:hidden">
-        {isSettings ? (
-          <div className="w-full text-center font-semibold">Einstellungen</div>
-        ) : (
-          <>
-            <button 
-              onClick={handlePrint} 
-              disabled={currentOpenDebts.length === 0}
-              className={`p-1 ${currentOpenDebts.length === 0 ? 'text-gray-300' : 'text-blue-500'}`}
-            >
-              <Share className="w-6 h-6" />
-            </button>
-            <div className="flex space-x-4">
-              <button onClick={() => setShowSplitModal(true)} className="text-blue-500 p-1">
-                <Divide className="w-6 h-6" />
-              </button>
-              <button onClick={() => { setDebtToEdit(null); setShowAddModal(true); }} className="text-blue-500 p-1">
-                <Plus className="w-6 h-6" />
-              </button>
-            </div>
-          </>
-        )}
-      </div>
-
-      <div className="print:hidden">
-        {isSettings ? (
-          <SettingsView settings={settings} updateSetting={updateSetting} />
-        ) : (
-          <div className="max-w-2xl mx-auto">
-            <div className="bg-white pt-6 pb-8 px-4 text-center border-b border-gray-200 shadow-sm">
-              <h1 className="text-3xl font-bold mb-1">{currentPersonName}</h1>
-              <p className="text-gray-500 text-sm font-medium mb-2">Auslagen</p>
-              <div className={`text-5xl font-bold tracking-tight ${currentTotalOpen > 0 ? 'text-red-500' : 'text-green-500'}`}>
-                {currentTotalOpen.toFixed(2).replace('.', ',')} €
-              </div>
-            </div>
-
-            <div className="px-4 py-6">
-              <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 ml-2">Offene Beträge</h2>
-              <div className="bg-white rounded-xl overflow-hidden shadow-sm mb-6">
-                {currentOpenDebts.length === 0 ? (
-                  <div className="p-4 text-gray-400 text-center">Alles beglichen! 🎉</div>
-                ) : (
-                  currentOpenDebts.map((debt, index) => (
-                    <DebtRow 
-                      key={debt.id} 
-                      debt={debt} 
-                      isLast={index === currentOpenDebts.length - 1}
-                      onToggle={() => updateDebt(debt.id, { isPaid: true })}
-                      onClick={() => openEdit(debt)}
-                    />
-                  ))
-                )}
-              </div>
-
-              <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 ml-2">Beglichene Beträge</h2>
-              <div className="bg-white rounded-xl overflow-hidden shadow-sm">
-                {currentPaidDebts.length === 0 ? (
-                  <div className="p-4 text-gray-400 text-center text-sm">Keine Einträge</div>
-                ) : (
-                  currentPaidDebts.map((debt, index) => (
-                    <DebtRow 
-                      key={debt.id} 
-                      debt={debt} 
-                      isLast={index === currentPaidDebts.length - 1}
-                      onToggle={() => updateDebt(debt.id, { isPaid: false })}
-                      onClick={() => openEdit(debt)}
-                    />
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-      </div>
-
-      <div className="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md border-t border-gray-200 flex justify-around items-center pb-safe pt-2 px-2 print:hidden z-20">
-        {[1, 2, 3, 4].map(num => (
-          settings.numberOfPersons >= num && (
-            <button 
-              key={`person${num}`}
-              onClick={() => setActiveTab(`person${num}`)}
-              className={`flex flex-col items-center p-2 w-16 ${activeTab === `person${num}` ? 'text-blue-500' : 'text-gray-400'}`}
-            >
-              <User className="w-6 h-6 mb-1" />
-              <span className="text-[10px] truncate w-full text-center">{settings[`person${num}Name`]}</span>
-            </button>
-          )
-        ))}
-        <button 
-          onClick={() => setActiveTab('settings')}
-          className={`flex flex-col items-center p-2 w-16 ${activeTab === 'settings' ? 'text-blue-500' : 'text-gray-400'}`}
-        >
-          <Settings className="w-6 h-6 mb-1" />
-          <span className="text-[10px]">Einstellungen</span>
-        </button>
-      </div>
-
-      {showAddModal && (
-        <AddDebtModal 
-          personKey={currentPersonKey}
-          debtToEdit={debtToEdit}
-          onClose={() => setShowAddModal(false)}
-          onSave={(newDebt) => {
-            saveDebt(newDebt);
-            setShowAddModal(false);
-          }}
-          onDelete={() => {
-            deleteDebt(debtToEdit.id);
-            setShowAddModal(false);
-          }}
-        />
-      )}
-
-      {showSplitModal && (
-        <SplitBillModal 
-          settings={settings}
-          onClose={() => setShowSplitModal(false)}
-          onSave={(newDebts) => {
-            newDebts.forEach(debt => saveDebt(debt));
-            setShowSplitModal(false);
-          }}
-        />
-      )}
-    </div>
-  );
-}
-
-// --- COMPONENTS ---
-
-function DebtRow({ debt, isLast, onToggle, onClick }) {
-  return (
-    <div className={`flex items-center p-0 ${!isLast ? 'border-b border-gray-100' : ''}`}>
-      <div className="flex-1 flex items-center px-4 py-3 cursor-pointer" onClick={onClick}>
-        <div className="flex-1">
-          <div className="font-semibold text-gray-900">{debt.reason || "Ohne Angabe"}</div>
-          <div className="text-xs text-gray-500">{new Date(debt.date).toLocaleDateString('de-DE')}</div>
-        </div>
-        {debt.receiptImage && <Paperclip className="w-4 h-4 text-gray-400 mr-3" />}
-        <div className={`font-bold mr-3 ${debt.isPaid ? 'text-gray-400' : 'text-gray-900'}`}>
-          {debt.amount.toFixed(2).replace('.', ',')} €
-        </div>
-        <ChevronRight className="w-4 h-4 text-gray-300" />
-      </div>
-      
-      <button 
-        onClick={(e) => { e.stopPropagation(); onToggle(); }}
-        className={`w-16 h-full flex flex-col justify-center items-center text-white text-xs transition-colors ${debt.isPaid ? 'bg-orange-500' : 'bg-green-500'}`}
-        style={{ minHeight: '60px' }}
-      >
-        {debt.isPaid ? <RotateCcw className="w-5 h-5" /> : <CheckCircle2 className="w-5 h-5" />}
-      </button>
-    </div>
-  );
-}
-
-function AddDebtModal({ personKey, debtToEdit, onClose, onSave, onDelete }) {
-  const [amount, setAmount] = useState(debtToEdit ? debtToEdit.amount.toString().replace('.', ',') : "");
-  const [reason, setReason] = useState(debtToEdit ? debtToEdit.reason : "");
-  const [date, setDate] = useState(debtToEdit ? debtToEdit.date : new Date().toISOString().split('T')[0]);
-  const [receiptImage, setReceiptImage] = useState(debtToEdit ? debtToEdit.receiptImage : null);
-
-  // Intelligenter Bild-Komprimierer für schnelles Laden & Speicher-Schutz
-  const handleImageUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        const MAX_WIDTH = 800; // Sichere Begrenzung für Datenbank
-        const MAX_HEIGHT = 800;
-        let width = img.width;
-        let height = img.height;
-
-        if (width > height) {
-          if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; }
-        } else {
-          if (height > MAX_HEIGHT) { width *= MAX_HEIGHT / height; height = MAX_HEIGHT; }
+        /* Erlaubt Eingabe in Textfeldern */
+        input, textarea {
+            -webkit-user-select: auto;
+            user-select: auto;
         }
-        
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(img, 0, 0, width, height);
-        setReceiptImage(canvas.toDataURL('image/jpeg', 0.6)); // JPG mit 60% Qualität
-      };
-      img.src = event.target.result;
-    };
-    reader.readAsDataURL(file);
-  };
+        /* Für sichere Ränder auf modernen iPhones (Notch/Dynamic Island) */
+        .pb-safe { padding-bottom: env(safe-area-inset-bottom); }
+        .pt-safe { padding-top: env(safe-area-inset-top); }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
 
-  const handleSave = () => {
-    const cleanAmount = parseFloat(amount.replace(',', '.'));
-    if (!isNaN(cleanAmount)) {
-      onSave({
-        id: debtToEdit ? debtToEdit.id : Date.now().toString() + Math.random().toString(36).substring(2,5),
-        personKey,
-        amount: cleanAmount,
-        reason,
-        date,
-        isPaid: debtToEdit ? debtToEdit.isPaid : false,
-        receiptImage
-      });
-    }
-  };
+    <script type="text/babel">
+        const { useState, useEffect, useMemo } = React;
 
-  const isValid = !isNaN(parseFloat(amount.replace(',', '.'))) && parseFloat(amount.replace(',', '.')) > 0;
+        // --- ICON HELPER COMPONENT ---
+        // Da wir kein npm nutzen, bauen wir die Icons als direkte SVGs ein (wie bei Lucide React)
+        const Icon = ({ name, className }) => {
+            const icons = {
+                user: <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>,
+                settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></>,
+                share: <><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" x2="12" y1="2" y2="15"/></>, // Apple Style Upload
+                divide: <><circle cx="12" cy="6" r="2"/><line x1="5" x2="19" y1="12" y2="12"/><circle cx="12" cy="18" r="2"/></>,
+                plus: <><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></>,
+                check: <><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></>,
+                rotate: <><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></>,
+                paperclip: <path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/>,
+                chevron: <path d="m9 18 6-6-6-6"/>,
+                camera: <><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/><circle cx="12" cy="13" r="3"/></>,
+                trash: <><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/><line x1="10" x2="10" y1="11" y2="17"/><line x1="14" x2="14" y1="11" y2="17"/></>,
+                euro: <><path d="M4 10h12"/><path d="M4 14h9"/><path d="M19 6a7.7 7.7 0 0 0-5.2-2A7.9 7.9 0 0 0 6 12c0 4.4 3.5 8 7.8 8 2 0 3.8-.8 5.2-2"/></>
+            };
+            return (
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className={className}>
+                    {icons[name]}
+                </svg>
+            );
+        };
 
-  return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-0 sm:p-4 print:hidden">
-      <div className="bg-[#F2F2F7] w-full max-w-md h-[90vh] sm:h-auto sm:max-h-[90vh] rounded-t-2xl sm:rounded-2xl overflow-y-auto flex flex-col shadow-2xl">
-        <div className="flex justify-between items-center p-4 bg-white border-b border-gray-200 sticky top-0 z-10">
-          <button onClick={onClose} className="text-blue-500 font-medium">Abbrechen</button>
-          <h3 className="font-semibold">{debtToEdit ? "Bearbeiten" : "Hinzufügen"}</h3>
-          <button onClick={handleSave} disabled={!isValid} className={`font-semibold ${isValid ? 'text-blue-500' : 'text-gray-300'}`}>Speichern</button>
-        </div>
+        // --- LOCAL STORAGE HOOK ---
+        function useStickyState(defaultValue, key) {
+            const [value, setValue] = useState(() => {
+                const stickyValue = window.localStorage.getItem(key);
+                return stickyValue !== null ? JSON.parse(stickyValue) : defaultValue;
+            });
+            useEffect(() => {
+                window.localStorage.setItem(key, JSON.stringify(value));
+            }, [key, value]);
+            return [value, setValue];
+        }
 
-        <div className="p-4 space-y-6">
-          <div className="bg-white rounded-xl overflow-hidden shadow-sm">
-            <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-500 uppercase">Betrag & Details</div>
-            <div className="p-4 border-b border-gray-100 flex items-center">
-              <span className="w-24 text-gray-600">Betrag in €</span>
-              <input type="text" inputMode="decimal" value={amount} onChange={e => setAmount(e.target.value)} className="flex-1 outline-none text-right font-medium text-lg" placeholder="0,00" />
-            </div>
-            <div className="p-4 border-b border-gray-100 flex items-center">
-              <span className="w-24 text-gray-600">Grund</span>
-              <input type="text" value={reason} onChange={e => setReason(e.target.value)} className="flex-1 outline-none text-right" placeholder="Optional" />
-            </div>
-            <div className="p-4 flex items-center">
-              <span className="w-24 text-gray-600">Datum</span>
-              <input type="date" value={date} onChange={e => setDate(e.target.value)} className="flex-1 outline-none bg-transparent text-right text-blue-500" />
-            </div>
-          </div>
+        // --- DEFAULT SETTINGS ---
+        const defaultSettings = {
+            hasCompletedOnboarding: false,
+            numberOfPersons: 2,
+            person1Name: "Person 1",
+            person2Name: "Person 2",
+            person3Name: "Person 3",
+            person4Name: "Person 4",
+            pdfTitle: "Auslagen-Übersicht",
+            pdfPaymentInfo: "Bitte überweise den Betrag. Danke!",
+            notificationsEnabled: true,
+            notificationFrequency: 7
+        };
 
-          <div className="bg-white rounded-xl overflow-hidden shadow-sm">
-            <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-500 uppercase">Beleg / Foto</div>
-            <div className="p-4 flex flex-col items-center">
-              {receiptImage ? (
-                <>
-                  <img src={receiptImage} alt="Beleg" className="max-h-48 rounded-md mb-4 object-contain" />
-                  <button onClick={() => setReceiptImage(null)} className="text-red-500 font-medium">Bild entfernen</button>
-                </>
-              ) : (
-                <label className="flex items-center justify-center w-full py-2 text-blue-500 font-medium cursor-pointer">
-                  <Camera className="w-5 h-5 mr-2" />
-                  Foto hinzufügen
-                  <input type="file" accept="image/*" capture="environment" onChange={handleImageUpload} className="hidden" />
-                </label>
-              )}
-            </div>
-          </div>
+        // --- MAIN APP COMPONENT ---
+        function App() {
+            const [settings, setSettings] = useStickyState(defaultSettings, 'auslagen_settings');
+            const [debts, setDebts] = useStickyState([], 'auslagen_debts');
 
-          {debtToEdit && (
-            <div className="bg-white rounded-xl overflow-hidden shadow-sm">
-              <button onClick={onDelete} className="w-full py-4 text-red-500 font-semibold flex justify-center items-center">
-                <Trash2 className="w-5 h-5 mr-2" /> Eintrag löschen
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
+            const completeOnboarding = (finalSettings) => {
+                setSettings({ ...finalSettings, hasCompletedOnboarding: true });
+            };
 
-function SplitBillModal({ settings, onClose, onSave }) {
-  const [totalAmount, setTotalAmount] = useState("");
-  const [reason, setReason] = useState("");
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
-  const [splitCount, setSplitCount] = useState(3);
-  
-  const activePersons = [];
-  for (let i = 1; i <= settings.numberOfPersons; i++) {
-    activePersons.push({ key: `person${i}`, name: settings[`person${i}Name`] });
-  }
+            if (!settings.hasCompletedOnboarding) {
+                return <OnboardingView initialSettings={settings} onComplete={completeOnboarding} />;
+            }
 
-  const [selectedPersons, setSelectedPersons] = useState(activePersons.map(p => p.key));
-
-  const cleanAmount = parseFloat(totalAmount.replace(',', '.')) || 0;
-  const calculatedShare = splitCount > 0 ? (cleanAmount / splitCount) : 0;
-
-  const togglePerson = (key) => {
-    setSelectedPersons(prev => prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]);
-  };
-
-  const handleSave = () => {
-    if (calculatedShare > 0 && selectedPersons.length > 0) {
-      const newDebts = selectedPersons.map(key => ({
-        id: Date.now().toString() + Math.random().toString(36).substring(2,6),
-        personKey: key,
-        amount: calculatedShare,
-        reason,
-        date,
-        isPaid: false,
-        receiptImage: null
-      }));
-      onSave(newDebts);
-    }
-  };
-
-  const isValid = calculatedShare > 0 && selectedPersons.length > 0;
-
-  return (
-    <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-0 sm:p-4 print:hidden">
-      <div className="bg-[#F2F2F7] w-full max-w-md h-[90vh] sm:h-auto sm:max-h-[90vh] rounded-t-2xl sm:rounded-2xl overflow-y-auto flex flex-col shadow-2xl">
-        <div className="flex justify-between items-center p-4 bg-white border-b border-gray-200 sticky top-0 z-10">
-          <button onClick={onClose} className="text-blue-500 font-medium">Abbrechen</button>
-          <h3 className="font-semibold">Betrag aufteilen</h3>
-          <button onClick={handleSave} disabled={!isValid} className={`font-semibold ${isValid ? 'text-blue-500' : 'text-gray-300'}`}>Speichern</button>
-        </div>
-
-        <div className="p-4 space-y-6">
-          <div className="bg-white rounded-xl overflow-hidden shadow-sm">
-            <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-500 uppercase">Kosten</div>
-            <div className="p-4 border-b border-gray-100 flex items-center">
-              <span className="w-32 text-gray-600">Gesamt (€)</span>
-              <input type="text" inputMode="decimal" value={totalAmount} onChange={e => setTotalAmount(e.target.value)} className="flex-1 outline-none text-right text-lg font-medium" placeholder="0,00" />
-            </div>
-            <div className="p-4 flex items-center justify-between">
-              <span className="text-gray-600">Geteilt durch: {splitCount} Personen</span>
-              <div className="flex bg-gray-100 rounded-md">
-                <button onClick={() => setSplitCount(Math.max(2, splitCount - 1))} className="px-3 py-1 border-r border-gray-200">-</button>
-                <button onClick={() => setSplitCount(Math.min(10, splitCount + 1))} className="px-3 py-1">+</button>
-              </div>
-            </div>
-            <div className="px-4 py-3 bg-[#F2F2F7] text-sm text-gray-500 text-center font-medium">
-              Jeder zahlt: <span className="text-black">{calculatedShare.toFixed(2).replace('.', ',')} €</span>
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl overflow-hidden shadow-sm">
-            <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-500 uppercase">Details</div>
-            <div className="p-4 border-b border-gray-100 flex items-center">
-              <span className="w-24 text-gray-600">Grund</span>
-              <input type="text" value={reason} onChange={e => setReason(e.target.value)} className="flex-1 outline-none text-right" placeholder="Optional" />
-            </div>
-            <div className="p-4 flex items-center">
-              <span className="w-24 text-gray-600">Datum</span>
-              <input type="date" value={date} onChange={e => setDate(e.target.value)} className="flex-1 outline-none bg-transparent text-right text-blue-500" />
-            </div>
-          </div>
-
-          <div className="bg-white rounded-xl overflow-hidden shadow-sm">
-            <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-500 uppercase">Anteil eintragen für...</div>
-            {activePersons.map((person, index) => (
-              <div key={person.key} className={`p-4 flex justify-between items-center ${index !== activePersons.length - 1 ? 'border-b border-gray-100' : ''}`}>
-                <span>{person.name}</span>
-                <input 
-                  type="checkbox" 
-                  checked={selectedPersons.includes(person.key)} 
-                  onChange={() => togglePerson(person.key)}
-                  className="w-5 h-5 accent-blue-500"
+            return (
+                <MainTabView 
+                    settings={settings} 
+                    updateSetting={(key, val) => setSettings(prev => ({...prev, [key]: val}))} 
+                    debts={debts} 
+                    setDebts={setDebts}
                 />
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
+            );
+        }
 
-function SettingsView({ settings, updateSetting }) {
-  // Lokaler State verhindert Springen des Cursors beim Tippen (Updates an Datenbank nur bei "onBlur" oder Checkbox)
-  const [local, setLocal] = useState(settings);
+        // --- 1. ONBOARDING VIEW ---
+        function OnboardingView({ initialSettings, onComplete }) {
+            const [local, setLocal] = useState(initialSettings);
+            const updateLocal = (key, value) => setLocal(prev => ({ ...prev, [key]: value }));
 
-  useEffect(() => {
-    setLocal(settings);
-  }, [settings]);
+            return (
+                <div className="min-h-screen bg-[#F2F2F7] text-black font-sans pb-20 pt-safe">
+                    <div className="max-w-md mx-auto pt-12 px-4">
+                        <div className="flex flex-col items-center mb-8">
+                            <Icon name="euro" className="w-16 h-16 text-green-500 mb-4" />
+                            <h1 className="text-2xl font-bold mb-2">Willkommen bei Auslagen! 🎉</h1>
+                            <p className="text-center text-gray-500 text-sm">
+                                Mit dieser App behältst du ganz einfach den Überblick darüber, wer dir noch Geld schuldet. Perfekt für WGs oder Freunde.
+                            </p>
+                        </div>
 
-  const handleChange = (key, val) => setLocal(prev => ({ ...prev, [key]: val }));
-  const handleSave = (key) => {
-    if (local[key] !== settings[key]) updateSetting(key, local[key]);
-  };
+                        <div className="bg-white rounded-xl overflow-hidden mb-6 shadow-sm">
+                            <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                                Für wen legst du aus?
+                            </div>
+                            <div className="p-4 border-b border-gray-100 flex justify-between items-center">
+                                <span>Anzahl der Personen: {local.numberOfPersons}</span>
+                                <div className="flex bg-gray-100 rounded-md">
+                                    <button onClick={() => updateLocal('numberOfPersons', Math.max(1, local.numberOfPersons - 1))} className="px-4 py-1 border-r border-gray-200 text-lg">-</button>
+                                    <button onClick={() => updateLocal('numberOfPersons', Math.min(4, local.numberOfPersons + 1))} className="px-4 py-1 text-lg">+</button>
+                                </div>
+                            </div>
+                            {[1, 2, 3, 4].map(num => (
+                                local.numberOfPersons >= num && (
+                                    <div key={num} className="p-4 border-b border-gray-100 flex items-center">
+                                        <span className="w-32 text-gray-600">Name Person {num}</span>
+                                        <input 
+                                            type="text" 
+                                            className="flex-1 outline-none text-right font-medium"
+                                            value={local[`person${num}Name`]}
+                                            onChange={(e) => updateLocal(`person${num}Name`, e.target.value)}
+                                        />
+                                    </div>
+                                )
+                            ))}
+                        </div>
 
-  return (
-    <div className="max-w-2xl mx-auto px-4 py-6 space-y-6 print:hidden">
-      <div className="bg-white rounded-xl overflow-hidden shadow-sm">
-        <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-500 uppercase">Personen verwalten</div>
-        <div className="p-4 border-b border-gray-100 flex justify-between items-center">
-          <span>Anzahl: {local.numberOfPersons}</span>
-          <div className="flex bg-gray-100 rounded-md">
-            <button onClick={() => {
-              const newVal = Math.max(1, local.numberOfPersons - 1);
-              handleChange('numberOfPersons', newVal);
-              updateSetting('numberOfPersons', newVal);
-            }} className="px-3 py-1 border-r border-gray-200">-</button>
-            <button onClick={() => {
-              const newVal = Math.min(4, local.numberOfPersons + 1);
-              handleChange('numberOfPersons', newVal);
-              updateSetting('numberOfPersons', newVal);
-            }} className="px-3 py-1">+</button>
-          </div>
-        </div>
-        {[1, 2, 3, 4].map(num => (
-          local.numberOfPersons >= num && (
-            <div key={num} className="p-4 border-b border-gray-100 flex items-center">
-              <span className="w-32 text-gray-600">Person {num}</span>
-              <input 
-                type="text" 
-                className="flex-1 outline-none text-right text-gray-900"
-                value={local[`person${num}Name`]}
-                onChange={(e) => handleChange(`person${num}Name`, e.target.value)}
-                onBlur={() => handleSave(`person${num}Name`)}
-              />
-            </div>
-          )
-        ))}
-      </div>
+                        <div className="bg-white rounded-xl overflow-hidden mb-8 shadow-sm">
+                            <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                                Erinnerungen
+                            </div>
+                            <div className="px-4 py-3 bg-[#F2F2F7] text-xs text-gray-500">
+                                Info: Normale Push-Erinnerungen funktionieren in Web-Apps auf dem iPhone nur bedingt. Denke daran, regelmäßig in die App zu schauen!
+                            </div>
+                        </div>
 
-      <div className="bg-white rounded-xl overflow-hidden shadow-sm">
-        <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-500 uppercase">PDF Dokument Layout</div>
-        <div className="p-4 border-b border-gray-100 flex items-center">
-          <span className="w-32 text-gray-600">Haupttitel</span>
-          <input 
-            type="text" 
-            value={local.pdfTitle} 
-            onChange={e => handleChange('pdfTitle', e.target.value)}
-            onBlur={() => handleSave('pdfTitle')}
-            className="flex-1 outline-none text-right" 
-          />
-        </div>
-        <div className="p-4 flex flex-col">
-          <span className="text-gray-600 mb-2">Zahlungsinformation</span>
-          <textarea 
-            value={local.pdfPaymentInfo} 
-            onChange={e => handleChange('pdfPaymentInfo', e.target.value)} 
-            onBlur={() => handleSave('pdfPaymentInfo')}
-            className="w-full outline-none bg-gray-50 p-3 rounded-md resize-none border border-gray-100" 
-            rows={3}
-          />
-        </div>
-      </div>
+                        <div className="flex justify-center">
+                            <button 
+                                onClick={() => onComplete(local)}
+                                className="bg-blue-500 text-white font-semibold py-3 px-12 rounded-full shadow-md active:scale-95 transition-transform"
+                            >
+                                App starten
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
 
-      <div className="flex justify-between items-center px-4 text-sm text-gray-500">
-        <span>Version</span>
-        <span>Web-Edition (Cloud Sync)</span>
-      </div>
-    </div>
-  );
-}
+        // --- 2. MAIN TAB VIEW ---
+        function MainTabView({ settings, updateSetting, debts, setDebts }) {
+            const [activeTab, setActiveTab] = useState('person1');
+            const [showAddModal, setShowAddModal] = useState(false);
+            const [showSplitModal, setShowSplitModal] = useState(false);
+            const [debtToEdit, setDebtToEdit] = useState(null);
 
-// --- NATIVE PRINT LAYOUT (PDF) ---
-function PrintLayout({ personName, debts, total, settings }) {
-  return (
-    <div className="hidden print:block p-8 bg-white text-black min-h-screen">
-      <div className="flex justify-between items-end mb-8">
-        <div>
-          <h1 className="text-4xl font-bold text-gray-900">{settings.pdfTitle}</h1>
-          <h2 className="text-2xl text-gray-500 mt-2">Für: {personName}</h2>
-        </div>
-        <div className="text-gray-500">
-          {new Date().toLocaleDateString('de-DE', { day: '2-digit', month: 'short', year: 'numeric' })}
-        </div>
-      </div>
+            const isSettings = activeTab === 'settings';
+            const currentPersonKey = isSettings ? 'person1' : activeTab;
+            const currentPersonName = settings[`${currentPersonKey}Name`];
 
-      <div className="text-3xl font-bold text-red-500 mb-4">
-        Offener Gesamtbetrag: {total.toFixed(2).replace('.', ',')} €
-      </div>
-      <hr className="border-black border-t-2 mb-6" />
+            const currentOpenDebts = useMemo(() => 
+                debts.filter(d => d.personKey === currentPersonKey && !d.isPaid)
+                     .sort((a, b) => new Date(b.date) - new Date(a.date)),
+            [debts, currentPersonKey]);
 
-      <h3 className="text-xl font-semibold mb-4">Einzelne Posten:</h3>
+            const currentPaidDebts = useMemo(() => 
+                debts.filter(d => d.personKey === currentPersonKey && d.isPaid)
+                     .sort((a, b) => new Date(b.date) - new Date(a.date)),
+            [debts, currentPersonKey]);
 
-      <div className="space-y-4">
-        {debts.map(debt => (
-          <div key={debt.id} className="border-b border-gray-300 pb-4">
-            <div className="flex justify-between items-start">
-              <div>
-                <div className="text-lg font-medium">{debt.reason || "Ohne Angabe"}</div>
-                <div className="text-sm text-gray-500">{new Date(debt.date).toLocaleDateString('de-DE')}</div>
-              </div>
-              <div className="text-lg font-bold">{debt.amount.toFixed(2).replace('.', ',')} €</div>
-            </div>
-            {debt.receiptImage && (
-              <img src={debt.receiptImage} alt="Beleg" className="mt-3 max-h-32 rounded-md object-contain shadow-sm border border-gray-200" />
-            )}
-          </div>
-        ))}
-      </div>
+            const currentTotalOpen = currentOpenDebts.reduce((sum, d) => sum + d.amount, 0);
 
-      {settings.pdfPaymentInfo && (
-        <div className="mt-12 p-4 bg-gray-100 rounded-lg text-gray-800 break-words font-medium">
-          {settings.pdfPaymentInfo}
-        </div>
-      )}
-    </div>
-  );
-}
+            const handlePrint = () => window.print();
 
+            const openEdit = (debt) => {
+                setDebtToEdit(debt);
+                setShowAddModal(true);
+            };
 
+            const saveDebt = (newDebt) => {
+                if (debtToEdit) {
+                    setDebts(debts.map(d => d.id === newDebt.id ? newDebt : d));
+                } else {
+                    setDebts([...debts, newDebt]);
+                }
+                setShowAddModal(false);
+            };
+
+            const deleteDebt = (id) => {
+                setDebts(debts.filter(d => d.id !== id));
+                setShowAddModal(false);
+            };
+
+            return (
+                <div className="min-h-screen bg-[#F2F2F7] font-sans pb-24 pt-safe print:bg-white print:pb-0 print:pt-0">
+                    <PrintLayout personName={currentPersonName} debts={currentOpenDebts} total={currentTotalOpen} settings={settings} />
+
+                    <div className="sticky top-0 z-10 bg-white/90 backdrop-blur-md border-b border-gray-200 px-4 py-3 flex justify-between items-center print:hidden pt-safe">
+                        {isSettings ? (
+                            <div className="w-full text-center font-semibold">Einstellungen</div>
+                        ) : (
+                            <>
+                                <button 
+                                    onClick={handlePrint} 
+                                    disabled={currentOpenDebts.length === 0}
+                                    className={`p-1 ${currentOpenDebts.length === 0 ? 'text-gray-300' : 'text-blue-500'}`}
+                                >
+                                    <Icon name="share" className="w-6 h-6" />
+                                </button>
+                                <div className="flex space-x-4">
+                                    <button onClick={() => setShowSplitModal(true)} className="text-blue-500 p-1">
+                                        <Icon name="divide" className="w-6 h-6" />
+                                    </button>
+                                    <button onClick={() => { setDebtToEdit(null); setShowAddModal(true); }} className="text-blue-500 p-1">
+                                        <Icon name="plus" className="w-6 h-6" />
+                                    </button>
+                                </div>
+                            </>
+                        )}
+                    </div>
+
+                    <div className="print:hidden">
+                        {isSettings ? (
+                            <SettingsView settings={settings} updateSetting={updateSetting} />
+                        ) : (
+                            <div className="max-w-2xl mx-auto">
+                                <div className="bg-white pt-6 pb-8 px-4 text-center border-b border-gray-200 shadow-sm">
+                                    <h1 className="text-3xl font-bold mb-1">{currentPersonName}</h1>
+                                    <p className="text-gray-500 text-sm font-medium mb-2">Auslagen</p>
+                                    <div className={`text-5xl font-bold tracking-tight ${currentTotalOpen > 0 ? 'text-red-500' : 'text-green-500'}`}>
+                                        {currentTotalOpen.toFixed(2).replace('.', ',')} €
+                                    </div>
+                                </div>
+
+                                <div className="px-4 py-6">
+                                    <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 ml-2">Offene Beträge</h2>
+                                    <div className="bg-white rounded-xl overflow-hidden shadow-sm mb-6">
+                                        {currentOpenDebts.length === 0 ? (
+                                            <div className="p-4 text-gray-400 text-center">Alles beglichen! 🎉</div>
+                                        ) : (
+                                            currentOpenDebts.map((debt, index) => (
+                                                <DebtRow 
+                                                    key={debt.id} debt={debt} isLast={index === currentOpenDebts.length - 1}
+                                                    onToggle={() => setDebts(debts.map(d => d.id === debt.id ? {...d, isPaid: true} : d))}
+                                                    onClick={() => openEdit(debt)}
+                                                />
+                                            ))
+                                        )}
+                                    </div>
+
+                                    <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2 ml-2">Beglichene Beträge</h2>
+                                    <div className="bg-white rounded-xl overflow-hidden shadow-sm">
+                                        {currentPaidDebts.length === 0 ? (
+                                            <div className="p-4 text-gray-400 text-center text-sm">Keine Einträge</div>
+                                        ) : (
+                                            currentPaidDebts.map((debt, index) => (
+                                                <DebtRow 
+                                                    key={debt.id} debt={debt} isLast={index === currentPaidDebts.length - 1}
+                                                    onToggle={() => setDebts(debts.map(d => d.id === debt.id ? {...d, isPaid: false} : d))}
+                                                    onClick={() => openEdit(debt)}
+                                                />
+                                            ))
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-gray-200 flex justify-around items-center pb-safe pt-2 px-2 print:hidden z-20 shadow-[0_-5px_15px_rgba(0,0,0,0.05)]">
+                        {[1, 2, 3, 4].map(num => (
+                            settings.numberOfPersons >= num && (
+                                <button 
+                                    key={`person${num}`}
+                                    onClick={() => setActiveTab(`person${num}`)}
+                                    className={`flex flex-col items-center p-2 w-16 ${activeTab === `person${num}` ? 'text-blue-500' : 'text-gray-400'}`}
+                                >
+                                    <Icon name="user" className="w-6 h-6 mb-1" />
+                                    <span className="text-[10px] truncate w-full text-center">{settings[`person${num}Name`]}</span>
+                                </button>
+                            )
+                        ))}
+                        <button 
+                            onClick={() => setActiveTab('settings')}
+                            className={`flex flex-col items-center p-2 w-16 ${activeTab === 'settings' ? 'text-blue-500' : 'text-gray-400'}`}
+                        >
+                            <Icon name="settings" className="w-6 h-6 mb-1" />
+                            <span className="text-[10px]">Einstellungen</span>
+                        </button>
+                    </div>
+
+                    {showAddModal && (
+                        <AddDebtModal 
+                            personKey={currentPersonKey} debtToEdit={debtToEdit}
+                            onClose={() => setShowAddModal(false)} onSave={saveDebt} onDelete={deleteDebt}
+                        />
+                    )}
+                    {showSplitModal && (
+                        <SplitBillModal 
+                            settings={settings} onClose={() => setShowSplitModal(false)}
+                            onSave={(newDebts) => { setDebts([...debts, ...newDebts]); setShowSplitModal(false); }}
+                        />
+                    )}
+                </div>
+            );
+        }
+
+        // --- COMPONENTS ---
+        function DebtRow({ debt, isLast, onToggle, onClick }) {
+            return (
+                <div className={`flex items-center p-0 ${!isLast ? 'border-b border-gray-100' : ''}`}>
+                    <div className="flex-1 flex items-center px-4 py-3 cursor-pointer" onClick={onClick}>
+                        <div className="flex-1">
+                            <div className="font-semibold text-gray-900">{debt.reason || "Ohne Angabe"}</div>
+                            <div className="text-xs text-gray-500">
+                                {new Date(debt.date).toLocaleDateString('de-DE', {day: '2-digit', month:'2-digit', year:'numeric'})}
+                            </div>
+                        </div>
+                        {debt.receiptImage && <Icon name="paperclip" className="w-4 h-4 text-gray-400 mr-3" />}
+                        <div className={`font-bold mr-3 ${debt.isPaid ? 'text-gray-400' : 'text-gray-900'}`}>
+                            {debt.amount.toFixed(2).replace('.', ',')} €
+                        </div>
+                        <Icon name="chevron" className="w-4 h-4 text-gray-300" />
+                    </div>
+                    <button 
+                        onClick={(e) => { e.stopPropagation(); onToggle(); }}
+                        className={`w-16 h-full flex flex-col justify-center items-center text-white text-xs transition-colors ${debt.isPaid ? 'bg-orange-500' : 'bg-green-500'}`}
+                        style={{ minHeight: '60px' }}
+                    >
+                        {debt.isPaid ? <Icon name="rotate" className="w-5 h-5" /> : <Icon name="check" className="w-5 h-5" />}
+                    </button>
+                </div>
+            );
+        }
+
+        function AddDebtModal({ personKey, debtToEdit, onClose, onSave, onDelete }) {
+            const [amount, setAmount] = useState(debtToEdit ? debtToEdit.amount.toString().replace('.', ',') : "");
+            const [reason, setReason] = useState(debtToEdit ? debtToEdit.reason : "");
+            const [date, setDate] = useState(debtToEdit ? debtToEdit.date : new Date().toISOString().split('T')[0]);
+            const [receiptImage, setReceiptImage] = useState(debtToEdit ? debtToEdit.receiptImage : null);
+
+            const handleImageUpload = (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        const canvas = document.createElement('canvas');
+                        const MAX_WIDTH = 800; const MAX_HEIGHT = 800;
+                        let width = img.width; let height = img.height;
+                        if (width > height) { if (width > MAX_WIDTH) { height *= MAX_WIDTH / width; width = MAX_WIDTH; } } 
+                        else { if (height > MAX_HEIGHT) { width *= MAX_HEIGHT / height; height = MAX_HEIGHT; } }
+                        canvas.width = width; canvas.height = height;
+                        const ctx = canvas.getContext('2d');
+                        ctx.drawImage(img, 0, 0, width, height);
+                        setReceiptImage(canvas.toDataURL('image/jpeg', 0.6));
+                    };
+                    img.src = event.target.result;
+                };
+                reader.readAsDataURL(file);
+            };
+
+            const handleSave = () => {
+                const cleanAmount = parseFloat(amount.replace(',', '.'));
+                if (!isNaN(cleanAmount)) {
+                    onSave({
+                        id: debtToEdit ? debtToEdit.id : Date.now().toString() + Math.random().toString(36).substring(2,5),
+                        personKey, amount: cleanAmount, reason, date,
+                        isPaid: debtToEdit ? debtToEdit.isPaid : false, receiptImage
+                    });
+                }
+            };
+
+            const isValid = !isNaN(parseFloat(amount.replace(',', '.'))) && parseFloat(amount.replace(',', '.')) > 0;
+
+            return (
+                <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-0 sm:p-4 print:hidden">
+                    <div className="bg-[#F2F2F7] w-full max-w-md h-[90vh] sm:h-auto sm:max-h-[90vh] rounded-t-2xl sm:rounded-2xl overflow-y-auto flex flex-col shadow-2xl">
+                        <div className="flex justify-between items-center p-4 bg-white border-b border-gray-200 sticky top-0 z-10 pt-safe">
+                            <button onClick={onClose} className="text-blue-500 font-medium">Abbrechen</button>
+                            <h3 className="font-semibold">{debtToEdit ? "Bearbeiten" : "Hinzufügen"}</h3>
+                            <button onClick={handleSave} disabled={!isValid} className={`font-semibold ${isValid ? 'text-blue-500' : 'text-gray-300'}`}>Speichern</button>
+                        </div>
+                        <div className="p-4 space-y-6 pb-safe">
+                            <div className="bg-white rounded-xl overflow-hidden shadow-sm">
+                                <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-500 uppercase">Betrag & Details</div>
+                                <div className="p-4 border-b border-gray-100 flex items-center">
+                                    <span className="w-24 text-gray-600">Betrag in €</span>
+                                    <input type="text" inputMode="decimal" value={amount} onChange={e => setAmount(e.target.value)} className="flex-1 outline-none text-right font-medium text-lg" placeholder="0,00" />
+                                </div>
+                                <div className="p-4 border-b border-gray-100 flex items-center">
+                                    <span className="w-24 text-gray-600">Grund</span>
+                                    <input type="text" value={reason} onChange={e => setReason(e.target.value)} className="flex-1 outline-none text-right" placeholder="Optional" />
+                                </div>
+                                <div className="p-4 flex items-center">
+                                    <span className="w-24 text-gray-600">Datum</span>
+                                    <input type="date" value={date} onChange={e => setDate(e.target.value)} className="flex-1 outline-none bg-transparent text-right text-blue-500" />
+                                </div>
+                            </div>
+                            <div className="bg-white rounded-xl overflow-hidden shadow-sm">
+                                <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-500 uppercase">Beleg / Foto</div>
+                                <div className="p-4 flex flex-col items-center">
+                                    {receiptImage ? (
+                                        <><img src={receiptImage} alt="Beleg" className="max-h-48 rounded-md mb-4 object-contain shadow-sm border border-gray-200" /><button onClick={() => setReceiptImage(null)} className="text-red-500 font-medium">Bild entfernen</button></>
+                                    ) : (
+                                        <label className="flex items-center justify-center w-full py-2 text-blue-500 font-medium cursor-pointer">
+                                            <Icon name="camera" className="w-5 h-5 mr-2" /> Foto hinzufügen
+                                            <input type="file" accept="image/*" capture="environment" onChange={handleImageUpload} className="hidden" />
+                                        </label>
+                                    )}
+                                </div>
+                            </div>
+                            {debtToEdit && (
+                                <div className="bg-white rounded-xl overflow-hidden shadow-sm">
+                                    <button onClick={() => onDelete(debtToEdit.id)} className="w-full py-4 text-red-500 font-semibold flex justify-center items-center">
+                                        <Icon name="trash" className="w-5 h-5 mr-2" /> Eintrag löschen
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function SplitBillModal({ settings, onClose, onSave }) {
+            const [totalAmount, setTotalAmount] = useState("");
+            const [reason, setReason] = useState("");
+            const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+            const [splitCount, setSplitCount] = useState(3);
+            
+            const activePersons = [];
+            for (let i = 1; i <= settings.numberOfPersons; i++) { activePersons.push({ key: `person${i}`, name: settings[`person${i}Name`] }); }
+            const [selectedPersons, setSelectedPersons] = useState(activePersons.map(p => p.key));
+
+            const cleanAmount = parseFloat(totalAmount.replace(',', '.')) || 0;
+            const calculatedShare = splitCount > 0 ? (cleanAmount / splitCount) : 0;
+
+            const handleSave = () => {
+                if (calculatedShare > 0 && selectedPersons.length > 0) {
+                    onSave(selectedPersons.map(key => ({
+                        id: Date.now().toString() + Math.random().toString(36).substring(2,6),
+                        personKey: key, amount: calculatedShare, reason, date, isPaid: false, receiptImage: null
+                    })));
+                }
+            };
+
+            const isValid = calculatedShare > 0 && selectedPersons.length > 0;
+
+            return (
+                <div className="fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center p-0 sm:p-4 print:hidden">
+                    <div className="bg-[#F2F2F7] w-full max-w-md h-[90vh] sm:h-auto sm:max-h-[90vh] rounded-t-2xl sm:rounded-2xl overflow-y-auto flex flex-col shadow-2xl">
+                        <div className="flex justify-between items-center p-4 bg-white border-b border-gray-200 sticky top-0 z-10 pt-safe">
+                            <button onClick={onClose} className="text-blue-500 font-medium">Abbrechen</button>
+                            <h3 className="font-semibold">Betrag aufteilen</h3>
+                            <button onClick={handleSave} disabled={!isValid} className={`font-semibold ${isValid ? 'text-blue-500' : 'text-gray-300'}`}>Speichern</button>
+                        </div>
+                        <div className="p-4 space-y-6 pb-safe">
+                            <div className="bg-white rounded-xl overflow-hidden shadow-sm">
+                                <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-500 uppercase">Kosten</div>
+                                <div className="p-4 border-b border-gray-100 flex items-center">
+                                    <span className="w-32 text-gray-600">Gesamt (€)</span>
+                                    <input type="text" inputMode="decimal" value={totalAmount} onChange={e => setTotalAmount(e.target.value)} className="flex-1 outline-none text-right text-lg font-medium" placeholder="0,00" />
+                                </div>
+                                <div className="p-4 flex items-center justify-between">
+                                    <span className="text-gray-600">Geteilt durch: {splitCount} Personen</span>
+                                    <div className="flex bg-gray-100 rounded-md">
+                                        <button onClick={() => setSplitCount(Math.max(2, splitCount - 1))} className="px-4 py-1 border-r border-gray-200 text-lg">-</button>
+                                        <button onClick={() => setSplitCount(Math.min(10, splitCount + 1))} className="px-4 py-1 text-lg">+</button>
+                                    </div>
+                                </div>
+                                <div className="px-4 py-3 bg-[#F2F2F7] text-sm text-gray-500 text-center font-medium">
+                                    Jeder zahlt: <span className="text-black">{calculatedShare.toFixed(2).replace('.', ',')} €</span>
+                                </div>
+                            </div>
+                            <div className="bg-white rounded-xl overflow-hidden shadow-sm">
+                                <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-500 uppercase">Details</div>
+                                <div className="p-4 border-b border-gray-100 flex items-center">
+                                    <span className="w-24 text-gray-600">Grund</span>
+                                    <input type="text" value={reason} onChange={e => setReason(e.target.value)} className="flex-1 outline-none text-right" placeholder="Optional" />
+                                </div>
+                                <div className="p-4 flex items-center">
+                                    <span className="w-24 text-gray-600">Datum</span>
+                                    <input type="date" value={date} onChange={e => setDate(e.target.value)} className="flex-1 outline-none bg-transparent text-right text-blue-500" />
+                                </div>
+                            </div>
+                            <div className="bg-white rounded-xl overflow-hidden shadow-sm">
+                                <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-500 uppercase">Anteil eintragen für...</div>
+                                {activePersons.map((person, index) => (
+                                    <div key={person.key} className={`p-4 flex justify-between items-center ${index !== activePersons.length - 1 ? 'border-b border-gray-100' : ''}`}>
+                                        <span>{person.name}</span>
+                                        <input 
+                                            type="checkbox" checked={selectedPersons.includes(person.key)} 
+                                            onChange={() => setSelectedPersons(prev => prev.includes(person.key) ? prev.filter(k => k !== person.key) : [...prev, person.key])}
+                                            className="w-5 h-5 accent-blue-500"
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        function SettingsView({ settings, updateSetting }) {
+            const [local, setLocal] = useState(settings);
+            useEffect(() => setLocal(settings), [settings]);
+            const handleChange = (key, val) => setLocal(prev => ({ ...prev, [key]: val }));
+            const handleSave = (key) => { if (local[key] !== settings[key]) updateSetting(key, local[key]); };
+
+            return (
+                <div className="max-w-2xl mx-auto px-4 py-6 space-y-6 print:hidden">
+                    <div className="bg-white rounded-xl overflow-hidden shadow-sm">
+                        <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-500 uppercase">Personen verwalten</div>
+                        <div className="p-4 border-b border-gray-100 flex justify-between items-center">
+                            <span>Anzahl: {local.numberOfPersons}</span>
+                            <div className="flex bg-gray-100 rounded-md">
+                                <button onClick={() => { const newVal = Math.max(1, local.numberOfPersons - 1); handleChange('numberOfPersons', newVal); updateSetting('numberOfPersons', newVal); }} className="px-4 py-1 border-r border-gray-200 text-lg">-</button>
+                                <button onClick={() => { const newVal = Math.min(4, local.numberOfPersons + 1); handleChange('numberOfPersons', newVal); updateSetting('numberOfPersons', newVal); }} className="px-4 py-1 text-lg">+</button>
+                            </div>
+                        </div>
+                        {[1, 2, 3, 4].map(num => (
+                            local.numberOfPersons >= num && (
+                                <div key={num} className="p-4 border-b border-gray-100 flex items-center">
+                                    <span className="w-32 text-gray-600">Person {num}</span>
+                                    <input 
+                                        type="text" className="flex-1 outline-none text-right font-medium text-gray-900"
+                                        value={local[`person${num}Name`]} onChange={(e) => handleChange(`person${num}Name`, e.target.value)} onBlur={() => handleSave(`person${num}Name`)}
+                                    />
+                                </div>
+                            )
+                        ))}
+                    </div>
+                    <div className="bg-white rounded-xl overflow-hidden shadow-sm">
+                        <div className="px-4 py-2 bg-gray-50 border-b border-gray-100 text-xs font-semibold text-gray-500 uppercase">PDF Dokument Layout</div>
+                        <div className="p-4 border-b border-gray-100 flex items-center">
+                            <span className="w-32 text-gray-600">Haupttitel</span>
+                            <input type="text" value={local.pdfTitle} onChange={e => handleChange('pdfTitle', e.target.value)} onBlur={() => handleSave('pdfTitle')} className="flex-1 outline-none text-right" />
+                        </div>
+                        <div className="p-4 flex flex-col">
+                            <span className="text-gray-600 mb-2">Zahlungsinformation</span>
+                            <textarea value={local.pdfPaymentInfo} onChange={e => handleChange('pdfPaymentInfo', e.target.value)} onBlur={() => handleSave('pdfPaymentInfo')} className="w-full outline-none bg-gray-50 p-3 rounded-md resize-none border border-gray-100" rows={3}/>
+                        </div>
+                    </div>
+                    <div className="flex justify-between items-center px-4 text-sm text-gray-500">
+                        <span>Version</span><span>Web-App (Local Storage)</span>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- NATIVE PRINT LAYOUT (PDF) ---
+        function PrintLayout({ personName, debts, total, settings }) {
+            return (
+                <div className="hidden print:block p-8 bg-white text-black min-h-screen font-sans">
+                    <div className="flex justify-between items-end mb-8">
+                        <div>
+                            <h1 className="text-4xl font-bold text-gray-900">{settings.pdfTitle}</h1>
+                            <h2 className="text-2xl text-gray-500 mt-2">Für: {personName}</h2>
+                        </div>
+                        <div className="text-gray-500">{new Date().toLocaleDateString('de-DE', { day: '2-digit', month: 'short', year: 'numeric' })}</div>
+                    </div>
+                    <div className="text-3xl font-bold text-red-500 mb-4">Offener Gesamtbetrag: {total.toFixed(2).replace('.', ',')} €</div>
+                    <hr className="border-black border-t-2 mb-6" />
+                    <h3 className="text-xl font-semibold mb-4">Einzelne Posten:</h3>
+                    <div className="space-y-4">
+                        {debts.map(debt => (
+                            <div key={debt.id} className="border-b border-gray-300 pb-4">
+                                <div className="flex justify-between items-start">
+                                    <div>
+                                        <div className="text-lg font-medium">{debt.reason || "Ohne Angabe"}</div>
+                                        <div className="text-sm text-gray-500">{new Date(debt.date).toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' })}</div>
+                                    </div>
+                                    <div className="text-lg font-bold">{debt.amount.toFixed(2).replace('.', ',')} €</div>
+                                </div>
+                                {debt.receiptImage && <img src={debt.receiptImage} alt="Beleg" className="mt-3 max-h-32 rounded-md object-contain shadow-sm border border-gray-200" />}
+                            </div>
+                        ))}
+                    </div>
+                    {settings.pdfPaymentInfo && <div className="mt-12 p-4 bg-gray-100 rounded-lg text-gray-800 break-words font-medium">{settings.pdfPaymentInfo}</div>}
+                </div>
+            );
+        }
+
+        // --- APP START ---
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
 
