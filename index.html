@@ -47,12 +47,12 @@
         const { useState, useEffect, useMemo } = React;
 
         // --- ICON HELPER COMPONENT ---
-        // Da wir kein npm nutzen, bauen wir die Icons als direkte SVGs ein (wie bei Lucide React)
         const Icon = ({ name, className }) => {
             const icons = {
-                user: <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>,
+                // FIX: Hier fehlte das Fragment <> </> um das User-Icon!
+                user: <><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></>,
                 settings: <><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></>,
-                share: <><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" x2="12" y1="2" y2="15"/></>, // Apple Style Upload
+                share: <><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" x2="12" y1="2" y2="15"/></>,
                 divide: <><circle cx="12" cy="6" r="2"/><line x1="5" x2="19" y1="12" y2="12"/><circle cx="12" cy="18" r="2"/></>,
                 plus: <><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></>,
                 check: <><circle cx="12" cy="12" r="10"/><path d="m9 12 2 2 4-4"/></>,
@@ -70,14 +70,23 @@
             );
         };
 
-        // --- LOCAL STORAGE HOOK ---
+        // --- LOCAL STORAGE HOOK (ROBUST VERSION) ---
         function useStickyState(defaultValue, key) {
             const [value, setValue] = useState(() => {
-                const stickyValue = window.localStorage.getItem(key);
-                return stickyValue !== null ? JSON.parse(stickyValue) : defaultValue;
+                try {
+                    const stickyValue = window.localStorage.getItem(key);
+                    return stickyValue !== null ? JSON.parse(stickyValue) : defaultValue;
+                } catch (error) {
+                    console.error("Local Storage Error:", error);
+                    return defaultValue;
+                }
             });
             useEffect(() => {
-                window.localStorage.setItem(key, JSON.stringify(value));
+                try {
+                    window.localStorage.setItem(key, JSON.stringify(value));
+                } catch (error) {
+                    console.error("Local Storage Save Error:", error);
+                }
             }, [key, value]);
             return [value, setValue];
         }
@@ -626,4 +635,5 @@
     </script>
 </body>
 </html>
+
 
